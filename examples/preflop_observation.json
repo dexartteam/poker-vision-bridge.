@@ -1,0 +1,81 @@
+{
+  "schema_version": "1.0",
+  "event_id": "camera-demo-event-0001",
+  "type": "table.observation",
+  "source": {
+    "agent_id": "camera-01",
+    "boot_id": "camera-boot-demo",
+    "seq": 1
+  },
+  "captured_at": "2026-09-02T18:00:00Z",
+  "table": {
+    "platform": "openpoker",
+    "table_id": "demo-table-01",
+    "mode": "bot_only"
+  },
+  "frame": {
+    "seq": 101,
+    "hash": "sha256:frame-demo-0001"
+  },
+  "observation": {
+    "hand_id": "demo-hand-42",
+    "street": "preflop",
+    "dealer_seat": 5,
+    "acting_seat": 4,
+    "blinds": {
+      "small": "10",
+      "big": "20",
+      "ante": "0"
+    },
+    "hero": {
+      "seat": 4,
+      "position": "CO",
+      "cards": ["Ah", "Kh"]
+    },
+    "board": [],
+    "pot": "30",
+    "seats": [
+      {"seat": 0, "position": "SB", "name": "bot_sb", "stack": "1990", "bet_to": "10", "status": "active", "in_hand": true, "folded": false},
+      {"seat": 1, "position": "BB", "name": "bot_bb", "stack": "1980", "bet_to": "20", "status": "active", "in_hand": true, "folded": false},
+      {"seat": 2, "position": "UTG", "name": "bot_utg", "stack": "2000", "bet_to": "0", "status": "active", "in_hand": true, "folded": true},
+      {"seat": 3, "position": "MP", "name": "bot_mp", "stack": "2000", "bet_to": "0", "status": "active", "in_hand": true, "folded": true},
+      {"seat": 4, "position": "CO", "name": "hero", "stack": "2000", "bet_to": "0", "status": "active", "in_hand": true, "folded": false},
+      {"seat": 5, "position": "BTN", "name": "bot_btn", "stack": "2000", "bet_to": "0", "status": "active", "in_hand": true, "folded": false}
+    ],
+    "action_history": {
+      "complete": true,
+      "actions": [
+        {"order": 0, "street": "preflop", "seat": 0, "position": "SB", "action": "small_blind", "contribution": "10", "raise_to": null, "all_in": false, "base_action": null, "node_label": null},
+        {"order": 1, "street": "preflop", "seat": 1, "position": "BB", "action": "big_blind", "contribution": "20", "raise_to": null, "all_in": false, "base_action": null, "node_label": null},
+        {"order": 2, "street": "preflop", "seat": 2, "position": "UTG", "action": "fold", "contribution": "0", "raise_to": null, "all_in": false, "base_action": null, "node_label": null},
+        {"order": 3, "street": "preflop", "seat": 3, "position": "MP", "action": "fold", "contribution": "0", "raise_to": null, "all_in": false, "base_action": null, "node_label": null}
+      ]
+    },
+    "legal_actions": [
+      {"action": "fold", "call_amount": null, "min_to": null, "max_to": null},
+      {"action": "call", "call_amount": "20", "min_to": null, "max_to": null},
+      {"action": "raise", "call_amount": null, "min_to": "40", "max_to": "2000"}
+    ],
+    "hero_turn": true,
+    "turn_id": "demo-hand-42-preflop-turn-1",
+    "pokerai": {
+      "preflop_version": "6max",
+      "flop_version": null,
+      "pot_type": null,
+      "roles": {},
+      "node_id": null
+    }
+  },
+  "confidence": {
+    "overall": 0.99,
+    "fields": {
+      "hero.cards": 0.999,
+      "board": 1.0,
+      "pot": 0.99,
+      "hero_turn": 0.999,
+      "legal_actions": 0.99
+    }
+  },
+  "state_token": "sha256:semantic-state-demo-0001"
+}
+
