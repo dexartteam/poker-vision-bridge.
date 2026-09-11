@@ -12,7 +12,7 @@ import {
 } from './contracts';
 
 document.querySelector('#app')!.innerHTML = `
-<main><header><a class="brand" href="/">TABLE VISION <span>LOCAL</span></a><a href="/server.html">Серверное распознавание ↗</a></header>
+<main><header><a class="brand" href="${import.meta.env.BASE_URL}">TABLE VISION <span>LOCAL</span></a>${import.meta.env.MODE === 'pages' ? '' : `<a href="${import.meta.env.BASE_URL}server.html">Серверное распознавание ↗</a>`}</header>
 <section class="heading"><div><p class="eyebrow">НАБЛЮДЕНИЕ ЗА СТОЛОМ</p><h1>Распознавание в браузере</h1><p>Камера или запись. Кадры остаются на этом устройстве.</p></div><span class="badge">БЕЗ КЛЮЧА API</span></section>
 <div class="workspace"><section class="panel input"><div class="panel-title"><h2>Видеовход</h2><span id="dimensions">Источник не выбран</span></div>
 <div class="stage"><div id="placeholder"><b>Откройте запись или включите камеру</b><p>Для записи Open Poker с телефона уже подготовлены области чтения.</p></div><div id="preview" hidden><video id="video" muted playsinline></video><canvas id="overlay"></canvas></div></div>

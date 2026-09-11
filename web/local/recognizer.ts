@@ -22,10 +22,11 @@ export class BrowserRecognizer {
   private rejectCards: ((e: Error) => void) | null = null;
   private id = 0;
   async start() {
+    const assetRoot = new URL(import.meta.env.BASE_URL, document.baseURI);
     const ocr = await createWorker('eng', 1, {
-      workerPath: new URL('/ocr/worker.min.js', location.origin).href,
-      corePath: new URL('/ocr', location.origin).href,
-      langPath: new URL('/ocr', location.origin).href,
+      workerPath: new URL('ocr/worker.min.js', assetRoot).href,
+      corePath: new URL('ocr', assetRoot).href,
+      langPath: new URL('ocr', assetRoot).href,
       workerBlobURL: false,
     });
     if (this.closed) {
