@@ -11,3 +11,5 @@ app/vision/static/
 recordings/
 .sites/
 .sites-runtime/
+web/public/ocr/
+tests/vision-fixtures/*.json

@@ -19,6 +19,12 @@ for (const file of files('web').filter((f) => f.endsWith('.ts'))) {
   if (/(?:OPENAI_API_KEY|api\.openai\.com|\/v1\/events|\/v1\/stream)/.test(text))
     violations.push(file + ': server or bridge boundary');
   if (
+    file.includes('/local/') &&
+    !file.endsWith('.test.ts') &&
+    /\bfetch\s*\(|VisionAPI|\/v1\/vision|from ['"].*(?:transport|session)\//.test(text)
+  )
+    violations.push(file + ': local recognition depends on server transport');
+  if (
     file.includes('/core/') &&
     !file.endsWith('.test.ts') &&
     /\b(?:fetch|document|window|navigator)\b|from ['"].*(?:session|transport|capture|ui)\//.test(
