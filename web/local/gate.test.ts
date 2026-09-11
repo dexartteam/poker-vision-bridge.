@@ -37,6 +37,155 @@ const flush = async () => {
 };
 afterEach(() => vi.useRealTimers());
 describe('local recognition queue and freshness', () => {
+  it('keeps a superseded reading only as history without confirming current state', async () => {
+    const applied = vi.fn(),
+      outdated = vi.fn();
+    let finish!: (o: LocalObservation) => void;
+    const gate = new LocalGate(
+      'epoch',
+      'calibration',
+      () => 1000,
+      applied,
+      vi.fn(),
+      0,
+      vi.fn(),
+      outdated,
+    );
+    const a = frame(1),
+      original = observation(a);
+    gate.offer(
+      a,
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    gate.change(1);
+    finish(original);
+    await flush();
+    expect(applied).not.toHaveBeenCalled();
+    expect(outdated).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        status: 'stale',
+        hand_number: 4812,
+        source: a.source,
+        decision_ready: false,
+      }),
+      'changed',
+    );
+    const historical = outdated.mock.calls[0][0];
+    expect(original.status).toBe('partial');
+    expect(historical.source).not.toBe(original.source);
+    const b = frame(2, 1);
+    gate.offer(b, async () => observation(b));
+    await flush();
+    expect(applied).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        status: 'partial',
+        evidence: 'single_frame',
+        source: b.source,
+      }),
+    );
+  });
+  it('shows slow OCR as expired history and still accepts the next timely frame', async () => {
+    let now = 1000,
+      finish!: (o: LocalObservation) => void;
+    const applied = vi.fn(),
+      outdated = vi.fn();
+    const gate = new LocalGate(
+      'epoch',
+      'calibration',
+      () => now,
+      applied,
+      vi.fn(),
+      0,
+      vi.fn(),
+      outdated,
+    );
+    const a = frame(1);
+    gate.offer(
+      a,
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    now = 7000;
+    finish(observation(a));
+    await flush();
+    expect(applied).not.toHaveBeenCalled();
+    expect(outdated).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        status: 'stale',
+        source: a.source,
+      }),
+      'expired',
+    );
+    const b = frame(2, 0, now);
+    gate.offer(b, async () => observation(b));
+    await flush();
+    expect(applied).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ status: 'partial', source: b.source }),
+    );
+  });
+  it('does not expose mismatched identity or an older sequence as history', async () => {
+    const applied = vi.fn(),
+      outdated = vi.fn();
+    const gate = new LocalGate(
+      'epoch',
+      'calibration',
+      () => 1000,
+      applied,
+      vi.fn(),
+      0,
+      vi.fn(),
+      outdated,
+    );
+    const current = frame(2);
+    gate.offer(current, async () => observation(current));
+    await flush();
+    for (const source of [
+      { ...frame(3).source, epoch: 'wrong' },
+      { ...frame(3).source, calibration_id: 'wrong' },
+      { ...frame(3).source, captured_at: 999 },
+    ]) {
+      gate.offer(frame(3), async () => ({ ...observation(frame(3)), source }));
+      await flush();
+    }
+    gate.offer(frame(1), async () => observation(frame(1)));
+    await flush();
+    expect(applied).toHaveBeenCalledTimes(1);
+    expect(outdated).not.toHaveBeenCalled();
+  });
+  it('does not expose a late historical result after closing the session', async () => {
+    const applied = vi.fn(),
+      outdated = vi.fn();
+    let finish!: (o: LocalObservation) => void;
+    const gate = new LocalGate(
+      'epoch',
+      'calibration',
+      () => 1000,
+      applied,
+      vi.fn(),
+      0,
+      vi.fn(),
+      outdated,
+    );
+    const a = frame(1);
+    gate.offer(
+      a,
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    gate.change(1);
+    gate.close();
+    finish(observation(a));
+    await flush();
+    expect(applied).not.toHaveBeenCalled();
+    expect(outdated).not.toHaveBeenCalled();
+  });
   it('keeps one active task, replaces pending work and rejects a superseded result', async () => {
     const applied = vi.fn(),
       started: number[] = [];

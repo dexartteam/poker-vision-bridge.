@@ -7,12 +7,13 @@ import {
   type LocalProfile,
 } from './contracts';
 import { BrowserRecognizer } from './recognizer';
-import { LocalGate } from './gate';
+import { LocalGate, type OutdatedReason } from './gate';
 import type { CardTemplate } from './cards';
 type Callbacks = {
   state: (o: LocalObservation) => void;
   detection: (d: Detection) => void;
-  invalidated: () => void;
+  invalidated: (reason: 'changed' | 'stopped') => void;
+  outdated?: (o: LocalObservation, reason: OutdatedReason) => void;
   error: (s: string) => void;
   stopped: () => void;
   count: (n: number) => void;
@@ -84,6 +85,11 @@ export class LocalController {
         if (!this.closed)
           this.detector.postMessage({ type: 'release', revision: frame.source.revision });
       },
+      (o, reason) => {
+        this.events.push(structuredClone(o));
+        if (this.events.length > 100) this.events.shift();
+        this.callbacks.outdated?.(o, reason);
+      },
     );
     this.detector.onmessage = (e) => this.result(e.data);
     this.detector.onerror = () => {
@@ -109,7 +115,7 @@ export class LocalController {
     this.capture = null;
     for (const event of ['seeking', 'pause', 'ended', 'error'])
       this.video.removeEventListener(event, this.stopEvent);
-    this.callbacks.invalidated();
+    this.callbacks.invalidated('stopped');
     this.callbacks.stopped();
     await this.recognizer.close();
   }
@@ -188,7 +194,7 @@ export class LocalController {
     this.callbacks.detection(d);
     if (d.changed) {
       this.gate.change(d.revision);
-      this.callbacks.invalidated();
+      this.callbacks.invalidated('changed');
     }
     if (!d.candidate) return;
     this.forced = null;
