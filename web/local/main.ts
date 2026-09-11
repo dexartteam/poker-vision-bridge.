@@ -2,6 +2,7 @@ import './style.css';
 import { readTemplateSet, type CardTemplate } from './cards';
 import { Camera } from '../capture/camera';
 import { LocalController } from './controller';
+import { pauseBeforeRecognition } from './playback';
 import {
   openPokerProfile,
   validateLocalProfile,
@@ -21,6 +22,10 @@ document.querySelector('#app')!.innerHTML = `
 <p id="source-note" class="hint">Поддержка формата видео зависит от браузера. При ошибке используйте MP4 (H.264).</p>
 <div class="metrics"><div><span>Детектор</span><b id="detector-ms">—</b></div><div><span>Изменение</span><b id="delta">—</b></div><div><span>Распознаваний</span><b id="count">0</b></div><div><span>Время OCR и карт</span><b id="elapsed">—</b></div></div></section>
 <section class="panel output"><div class="panel-title"><h2>Прочитанные поля</h2><span id="state-badge" class="badge">Ожидание</span></div>
+<div class="recognition-controls"><p class="hint">Чтобы прочитать поля, проверьте рамки на видео и запустите распознавание.</p>
+<label class="check"><input id="calibrated" type="checkbox"> Области совпадают с полями на моём видео</label>
+<div class="toolbar"><button id="start" class="primary" disabled>Начать распознавание</button><button id="stop" disabled>Стоп</button><button id="manual" disabled>Новый кадр</button></div>
+<p id="status" role="status">Выберите видеовход.</p></div>
 <div class="facts"><div><span>Раздача</span><strong id="hand">—</strong></div><div><span>Этап</span><strong id="street">—</strong></div><div><span>Банк, фишки</span><strong id="pot">—</strong></div><div><span>Режим в кадре</span><strong id="view-mode">—</strong></div></div>
 <div class="board-block"><span>Общие карты</span><div id="cards" class="cards"></div></div><p id="evidence" class="hint">Результаты появятся после запуска наблюдения.</p>
 <details><summary>JSON состояния</summary><pre id="json">{}</pre></details>
@@ -29,12 +34,10 @@ document.querySelector('#app')!.innerHTML = `
 <p class="hint">Выберите поле и обведите его на приостановленном видео. Банк — вся панель с POT, число банка — только цифры. Общие карты должны целиком помещаться в области.</p>
 <div class="toolbar"><select id="region" aria-label="Область чтения"></select><button id="preset">Профиль этой записи</button></div>
 <div class="toolbar"><button id="save-profile">Сохранить профиль</button><button id="export-profile">Экспорт</button><label class="button">Импорт<input id="import-profile" type="file" accept="application/json" hidden></label></div>
-<label class="check"><input id="calibrated" type="checkbox"> Области совпадают с полями на моём видео</label>
 <div class="toolbar"><label class="button">Загрузить шаблоны карт<input id="import-cards" type="file" accept="application/json" hidden></label></div><p id="card-model" class="hint">Шаблоны не загружены. Читаем текстовые поля; карты пока неизвестны.</p></section>
 <section class="panel"><div class="panel-title"><h2>Наблюдение</h2><span class="badge">ЛОКАЛЬНО</span></div>
 <p class="hint">Проверяем изменения 5 раз в секунду. Распознаём выбранные кадры с интервалом не меньше секунды; неподвижный стол перепроверяем каждые 2 секунды.</p>
-<div class="toolbar"><button id="start" class="primary" disabled>Начать наблюдение</button><button id="stop" disabled>Стоп</button><button id="manual" disabled>Новый кадр</button></div>
-<button id="export-state" disabled>Скачать наблюдения JSON</button><p id="status" role="status">Выберите видеовход.</p>
+<button id="export-state" disabled>Скачать наблюдения JSON</button>
 <p class="hint">Запись остаётся записью даже с надписью LIVE. Пауза, перемотка и скрытие вкладки останавливают наблюдение.</p></section></div>
 <footer>TABLE VISION · Частичное наблюдение · Никаких игровых команд</footer></main>`;
 
@@ -53,6 +56,8 @@ let launchGeneration = 0,
   initializing: number | null = null;
 let latest: LocalObservation | null = null,
   history: unknown = null;
+let reading = false;
+let runError: string | null = null;
 let drag: { x: number; y: number } | null = null;
 const labels: Record<RegionName, string> = {
   header: 'Номер и этап раздачи',
@@ -91,14 +96,52 @@ function buttons() {
   el<HTMLButtonElement>('play').disabled = !loaded || busy;
   el<HTMLInputElement>('seek').disabled = !loaded || busy;
   el<HTMLButtonElement>('export-state').disabled = !history && !controller;
+  el<HTMLInputElement>('calibrated').disabled = !loaded || busy || !!controller;
+  if (!latest) showWaiting();
 }
-function invalidate() {
+function showWaiting() {
+  let badge: string, hint: string;
+  if (runError) {
+    badge = 'Ошибка';
+    hint = runError;
+  } else if (initializing !== null) {
+    badge = 'Загрузка OCR';
+    hint = 'Готовим распознавание на устройстве. При первом запуске загружается языковая модель.';
+  } else if (controller) {
+    badge = reading ? 'Читаем кадр' : 'Ждём кадр';
+    hint = reading
+      ? 'Распознаём текст и карты. Результат появится после обработки кадра.'
+      : 'Распознавание запущено. Выбираем кадр для первого чтения.';
+  } else if (!loaded) {
+    badge = 'Нет видео';
+    hint = 'Откройте видео или включите камеру.';
+  } else if (!el<HTMLInputElement>('calibrated').checked) {
+    badge = 'Проверьте области';
+    hint = 'Распознавание не запущено. Проверьте рамки на видео и подтвердите их совпадение выше.';
+  } else {
+    badge = 'Можно начать';
+    hint = 'Нажмите «Начать распознавание». Кнопка «Воспроизвести» управляет только видео.';
+  }
+  el('state-badge').textContent = badge;
+  el('state-badge').classList.remove('stale');
+  el('evidence').textContent = hint;
+}
+function invalidate(reason?: 'changed' | 'stopped') {
+  if (reason === 'changed' && latest) {
+    display({ ...latest, status: 'stale' });
+    return;
+  }
   latest = null;
   for (const id of ['hand', 'street', 'pot', 'view-mode']) el(id).textContent = '—';
   el('json').textContent = '{}';
-  el('state-badge').textContent = 'Ждём кадр';
-  el('evidence').textContent = 'Предыдущий результат больше не считается актуальным.';
+  showWaiting();
   renderCards([]);
+}
+function showError(message: string) {
+  runError = message;
+  reading = false;
+  status(message);
+  invalidate();
 }
 function renderCards(cards: LocalObservation['board']) {
   el('cards').replaceChildren(
@@ -131,14 +174,26 @@ function display(o: LocalObservation) {
   }[o.ui_street];
   el('pot').textContent = o.pot_display.value?.toLocaleString('ru') ?? '—';
   el('view-mode').textContent = o.ui_mode.toUpperCase();
-  el('state-badge').textContent = o.ui_mode === 'replay' ? 'Повтор раздачи' : 'Частично';
+  const stale = o.status === 'stale';
+  el('state-badge').textContent = stale
+    ? 'Прошлый кадр'
+    : o.ui_mode === 'replay'
+      ? 'Повтор раздачи'
+      : 'Частично';
+  el('state-badge').classList.toggle('stale', stale);
   el('elapsed').textContent = `${o.diagnostics.elapsed_ms} мс`;
-  el('evidence').textContent =
-    `${o.source.kind === 'recording' ? 'Из записи' : 'С камеры'} · ${o.evidence === 'repeated' ? 'чтение полей повторилось' : o.evidence === 'moving' ? 'кадр ещё движется' : 'первое чтение полей'} · полное состояние не подтверждено`;
+  const captured =
+    o.source.kind === 'recording' && o.source.media_time !== null
+      ? `Кадр записи ${Math.floor(o.source.media_time / 60)}:${(o.source.media_time % 60).toFixed(1).padStart(4, '0')}`
+      : `Снимок ${new Date(o.source.captured_at).toLocaleTimeString('ru')}`;
+  el('evidence').textContent = stale
+    ? `${captured} · кадр уже изменился или чтение задержалось. Это последнее чтение, а не текущее состояние стола.`
+    : `${captured} · ${o.evidence === 'repeated' ? 'чтение полей повторилось' : o.evidence === 'moving' ? 'кадр ещё движется' : 'первое чтение полей'} · полное состояние не подтверждено`;
   el('json').textContent = JSON.stringify(o, null, 2);
   renderCards(o.board);
 }
 async function stop() {
+  reading = false;
   if (initializing !== null) {
     launchGeneration++;
     initializing = null;
@@ -203,6 +258,7 @@ async function resetSource() {
   if (url) URL.revokeObjectURL(url);
   url = '';
   loaded = false;
+  runError = null;
   invalidate();
   el('camera').textContent = 'Включить камеру';
   el('preview').hidden = true;
@@ -292,20 +348,43 @@ el('start').onclick = async () => {
   if (busy || controller || !loaded || !el<HTMLInputElement>('calibrated').checked) return;
   const generation = ++launchGeneration;
   initializing = generation;
+  runError = null;
+  reading = false;
+  el('count').textContent = '0';
+  el('elapsed').textContent = '—';
   busy = true;
   buttons();
   status('Загружаются локальный OCR и языковая модель…');
   try {
+    if (
+      kind === 'recording' &&
+      !(await pauseBeforeRecognition(video, () => generation === launchGeneration))
+    )
+      return;
     const instance = new LocalController(
       video,
       profile,
       kind,
       {
-        state: display,
+        state: (o) => {
+          reading = false;
+          display(o);
+          status('Кадр прочитан. Продолжаем наблюдение.');
+        },
+        outdated: (o) => {
+          reading = false;
+          display(o);
+          status(
+            'Показано последнее чтение. Картинка успела измениться; обрабатываем следующие кадры.',
+          );
+        },
         invalidated: invalidate,
-        error: status,
+        error: showError,
         count: (n) => {
+          reading = true;
           el('count').textContent = String(n);
+          status(`Распознаём кадр · попытка ${n}.`);
+          if (!latest) showWaiting();
         },
         detection: (d) => {
           el('detector-ms').textContent = `${d.elapsedMs.toFixed(1)} мс`;
@@ -315,6 +394,7 @@ el('start').onclick = async () => {
           if (controller !== instance) return;
           history = instance.recording();
           controller = null;
+          reading = false;
           if (initializing === generation) {
             launchGeneration++;
             initializing = null;
@@ -336,7 +416,7 @@ el('start').onclick = async () => {
     }
   } catch (e) {
     if (generation === launchGeneration) {
-      status(e instanceof Error ? e.message : 'Ошибка запуска OCR');
+      showError(e instanceof Error ? e.message : 'Ошибка запуска OCR');
       await stop();
     }
   } finally {
@@ -460,13 +540,8 @@ window.addEventListener('pagehide', () => {
   if (url) URL.revokeObjectURL(url);
 });
 setInterval(() => {
-  if (latest && Date.now() - latest.source.captured_at > 5000) {
-    latest.status = 'stale';
-    el('state-badge').textContent = 'Устарело';
-    el('json').textContent = JSON.stringify(latest, null, 2);
-    for (const id of ['hand', 'street', 'pot', 'view-mode']) el(id).textContent = '—';
-    renderCards([]);
-  }
+  if (latest && latest.status !== 'stale' && Date.now() - latest.source.captured_at > 5000)
+    display({ ...latest, status: 'stale' });
 }, 250);
 try {
   const saved = localStorage.getItem('table-vision-local-profile-v1');

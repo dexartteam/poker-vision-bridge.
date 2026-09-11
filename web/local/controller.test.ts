@@ -72,6 +72,7 @@ const observed = (f: Frame): LocalObservation => ({
 });
 const callbacks = () => ({
   state: vi.fn(),
+  outdated: vi.fn(),
   detection: vi.fn(),
   invalidated: vi.fn(),
   error: vi.fn(),
@@ -156,6 +157,13 @@ it('invalidates during slow OCR and owns immutable source pixels and calibration
   resolve(observed(captured));
   await vi.advanceTimersByTimeAsync(1);
   expect(cb.state).not.toHaveBeenCalled();
+  expect(cb.outdated).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ status: 'stale', source: captured.source }),
+    'changed',
+  );
+  expect(c.recording().observations).toEqual([
+    expect.objectContaining({ status: 'stale', decision_ready: false }),
+  ]);
   await c.stop();
 });
 it.each(['seeking', 'pause', 'ended', 'error'])(
@@ -178,6 +186,7 @@ it.each(['seeking', 'pause', 'ended', 'error'])(
     resolve(observed(captured));
     await vi.advanceTimersByTimeAsync(1);
     expect(cb.state).not.toHaveBeenCalled();
+    expect(cb.outdated).not.toHaveBeenCalled();
     expect(engine.close).toHaveBeenCalledOnce();
     expect(video.callbacks.size).toBe(0);
   },

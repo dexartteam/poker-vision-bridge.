@@ -1,4 +1,5 @@
 import type { Frame, LocalObservation } from './contracts';
+export type OutdatedReason = 'changed' | 'expired';
 type Task = () => Promise<LocalObservation>;
 /** One active + one replaceable pending. Captured frames are owned by each task. */
 export class LocalGate {
@@ -18,6 +19,7 @@ export class LocalGate {
     private failed: (error: unknown) => void,
     private minInterval = 1000,
     private discarded: (frame: Frame) => void = () => {},
+    private outdated: (o: LocalObservation, reason: OutdatedReason) => void = () => {},
   ) {}
   change(revision: number) {
     if (revision <= this.revision) return;
@@ -67,12 +69,20 @@ export class LocalGate {
         s = job.frame.source;
       if (
         this.closed ||
-        s.revision !== this.revision ||
         s.frame_seq <= this.lastSeq ||
-        this.now() - s.captured_at > 5000 ||
+        s.epoch !== this.epoch ||
+        s.calibration_id !== this.calibration ||
         JSON.stringify(o.source) !== JSON.stringify(s)
       )
         return;
+      if (s.revision !== this.revision || this.now() - s.captured_at > 5000) {
+        // A readable historical frame is useful for diagnostics, never current state.
+        this.outdated(
+          { ...structuredClone(o), status: 'stale' },
+          s.revision !== this.revision ? 'changed' : 'expired',
+        );
+        return;
+      }
       this.lastSeq = s.frame_seq;
       const key = JSON.stringify({
         mode: o.ui_mode,
