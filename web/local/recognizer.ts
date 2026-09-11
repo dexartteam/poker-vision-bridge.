@@ -2,6 +2,7 @@ import { createWorker, PSM, type Worker as OCRWorker } from 'tesseract.js';
 import type { Pixels } from '../core/detector';
 import {
   pixelRect,
+  isPokerStars,
   type CardMatch,
   type Frame,
   type LocalObservation,
@@ -11,10 +12,17 @@ import {
 import { readFields } from './fields';
 import { prepareHeader, prepareAmount } from './preprocess';
 import type { CardTemplate } from './cards';
+import type { SymbolSet } from './pokerstars/symbols';
+import { prepareText } from './pokerstars/preprocess';
+import { recognizePokerStars } from './pokerstars/recognize';
 
 export class BrowserRecognizer {
-  constructor(private templates: CardTemplate[] = []) {
+  constructor(
+    private templates: CardTemplate[] = [],
+    private symbols: SymbolSet | null = null,
+  ) {
     this.templates = structuredClone(templates);
+    this.symbols = structuredClone(symbols);
   }
   private ocr: OCRWorker | null = null;
   private closed = false;
@@ -46,7 +54,7 @@ export class BrowserRecognizer {
     this.ocr = null;
     if (ocr) await ocr.terminate();
   }
-  private cardRead(pixels: Pixels): Promise<CardMatch[]> {
+  private cardRead(pixels: Pixels, kind: 'open' | 'board' | 'hero' = 'open'): Promise<CardMatch[]> {
     return new Promise((resolve, reject) => {
       if (!this.cards || this.closed) {
         reject(new Error('Распознаватель остановлен'));
@@ -75,13 +83,41 @@ export class BrowserRecognizer {
         done();
         reject(new Error('Ошибка Worker карт'));
       };
-      this.cards.postMessage({ id, pixels, templates: this.templates }, [pixels.data.buffer]);
+      this.cards.postMessage(
+        { id, pixels, kind, templates: this.templates, symbols: this.symbols },
+        [pixels.data.buffer],
+      );
     });
   }
   async recognize(frame: Frame, profile: LocalProfile): Promise<LocalObservation> {
     if (!this.ocr || this.closed) throw new Error('Распознаватель не запущен');
     if (frame.pixels.width !== profile.width || frame.pixels.height !== profile.height)
       throw new Error('Размер кадра изменился. Настройте области заново.');
+    if (isPokerStars(profile))
+      return recognizePokerStars(frame, profile, {
+        text: async (pixels, block) => {
+          if (!this.ocr || this.closed) throw new Error('Наблюдение остановлено');
+          const prepared = prepareText(pixels);
+          const canvas = document.createElement('canvas');
+          canvas.width = prepared.width;
+          canvas.height = prepared.height;
+          canvas
+            .getContext('2d')!
+            .putImageData(
+              new ImageData(new Uint8ClampedArray(prepared.data), prepared.width, prepared.height),
+              0,
+              0,
+            );
+          await this.ocr.setParameters({
+            tessedit_pageseg_mode: block ? PSM.SINGLE_BLOCK : PSM.SINGLE_LINE,
+            tessedit_char_whitelist: '',
+            user_defined_dpi: '150',
+          });
+          const { data } = await this.ocr.recognize(canvas);
+          return { text: data.text.trim(), confidence: data.confidence };
+        },
+        cards: (pixels, kind) => this.cardRead(pixels, kind),
+      });
     const begin = performance.now();
     const canvas = document.createElement('canvas');
     canvas.width = profile.width;

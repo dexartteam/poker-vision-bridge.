@@ -13,3 +13,5 @@ recordings/
 .sites-runtime/
 web/public/ocr/
 tests/vision-fixtures/*.json
+tests/pokerstars-fixtures/*
+!tests/pokerstars-fixtures/README.md

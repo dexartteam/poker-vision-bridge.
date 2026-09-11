@@ -9,6 +9,7 @@ import {
 import { BrowserRecognizer } from './recognizer';
 import { LocalGate, type OutdatedReason } from './gate';
 import type { CardTemplate } from './cards';
+import type { SymbolSet } from './pokerstars/symbols';
 type Callbacks = {
   state: (o: LocalObservation) => void;
   detection: (d: Detection) => void;
@@ -44,9 +45,10 @@ export class LocalController {
     private kind: 'camera' | 'recording',
     private callbacks: Callbacks,
     templates: CardTemplate[] = [],
+    symbols: SymbolSet | null = null,
   ) {
     this.profile = validateLocalProfile(profile);
-    this.recognizer = new BrowserRecognizer(templates);
+    this.recognizer = new BrowserRecognizer(templates, symbols);
     this.full.width = profile.width;
     this.full.height = profile.height;
     this.small.width = Math.min(640, profile.width);
@@ -57,11 +59,13 @@ export class LocalController {
     this.detector.postMessage({
       type: 'init',
       config: { ...DEFAULTS, safetyPollMs: 2000 },
-      regions: Object.entries(this.profile.regions).map(([name, r]) => ({
-        name,
-        ...r,
-        ignore: false,
-      })),
+      regions: Object.entries(this.profile.regions)
+        .filter(([name]) => name !== 'chat')
+        .map(([name, r]) => ({
+          name,
+          ...r,
+          ignore: false,
+        })),
     });
     this.gate = new LocalGate(
       this.epoch,

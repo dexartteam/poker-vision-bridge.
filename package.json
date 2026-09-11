@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:recording": "node scripts/test-recording.mjs",
+    "test:pokerstars": "node scripts/test-pokerstars.mjs",
     "test:python": "uv run pytest -q",
     "check:architecture": "node scripts/check-architecture.mjs",
     "verify": "npm run typecheck && npm run lint && npm run check:architecture && npm test && npm run test:python && npm run build && npm run smoke:production",

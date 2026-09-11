@@ -3,20 +3,24 @@ import { readTemplateSet, type CardTemplate } from './cards';
 import { Camera } from '../capture/camera';
 import { LocalController } from './controller';
 import { pauseBeforeRecognition } from './playback';
+import { pokerStarsProfile, pokerStarsLabels } from './pokerstars/profile';
+import { readSymbolSet, type SymbolSet } from './pokerstars/symbols';
 import {
   openPokerProfile,
   validateLocalProfile,
-  REGION_NAMES,
+  regionNames,
+  isPokerStars,
   type LocalObservation,
   type LocalProfile,
-  type RegionName,
+  type VisibleAction,
 } from './contracts';
 
 document.querySelector('#app')!.innerHTML = `
 <main><header><a class="brand" href="${import.meta.env.BASE_URL}">TABLE VISION <span>LOCAL</span></a>${import.meta.env.MODE === 'pages' ? '' : `<a href="${import.meta.env.BASE_URL}server.html">Серверное распознавание ↗</a>`}</header>
 <section class="heading"><div><p class="eyebrow">НАБЛЮДЕНИЕ ЗА СТОЛОМ</p><h1>Распознавание в браузере</h1><p>Камера или запись. Кадры остаются на этом устройстве.</p></div><span class="badge">БЕЗ КЛЮЧА API</span></section>
 <div class="workspace"><section class="panel input"><div class="panel-title"><h2>Видеовход</h2><span id="dimensions">Источник не выбран</span></div>
-<div class="stage"><div id="placeholder"><b>Откройте запись или включите камеру</b><p>Для записи Open Poker с телефона уже подготовлены области чтения.</p></div><div id="preview" hidden><video id="video" muted playsinline></video><canvas id="overlay"></canvas></div></div>
+<div class="toolbar"><label for="layout">Интерфейс стола</label><select id="layout"><option value="pokerstars-classic">PokerStars · классический, 6 мест</option><option value="open-poker">Open Poker · вертикальная запись</option></select></div>
+<div class="stage"><div id="placeholder"><b>Откройте запись или включите камеру</b><p>Выберите интерфейс стола и проверьте области чтения.</p></div><div id="preview" hidden><video id="video" muted playsinline></video><canvas id="overlay"></canvas></div></div>
 <div class="toolbar"><label class="button primary">Открыть видео<input id="file" type="file" accept="video/*" hidden></label><button id="camera">Включить камеру</button><button id="play" disabled>Воспроизвести</button></div>
 <div id="timeline" hidden><label for="seek">Позиция записи <span id="position">0:00</span></label><input id="seek" type="range" min="0" max="1" step="0.1" value="0"></div>
 <p id="source-note" class="hint">Поддержка формата видео зависит от браузера. При ошибке используйте MP4 (H.264).</p>
@@ -28,10 +32,11 @@ document.querySelector('#app')!.innerHTML = `
 <p id="status" role="status">Выберите видеовход.</p></div>
 <div class="facts"><div><span>Раздача</span><strong id="hand">—</strong></div><div><span>Этап</span><strong id="street">—</strong></div><div><span>Банк, фишки</span><strong id="pot">—</strong></div><div><span>Режим в кадре</span><strong id="view-mode">—</strong></div></div>
 <div class="board-block"><span>Общие карты</span><div id="cards" class="cards"></div></div><p id="evidence" class="hint">Результаты появятся после запуска наблюдения.</p>
+<section id="players"><div class="board-block"><span>Свои карты</span><div id="hero-cards" class="cards"></div></div><p id="hero-turn" class="hint">Очередь хода не подтверждена.</p><div class="table-scroll"><table><thead><tr><th>Место</th><th>Стек</th><th>Фишки у места</th><th>Подпись</th></tr></thead><tbody id="seats"></tbody></table></div><p class="hint">Места по часовой стрелке, начиная сверху. Подписи действий относятся к этому кадру; история ходов ещё не восстановлена. Сумма у места может быть ставкой или выплатой выигрыша. Невидимая сумма не считается нулевой.</p></section>
 <details><summary>JSON состояния</summary><pre id="json">{}</pre></details>
-<div class="output-footer">Стеки, места и карты героя пока не распознаются. Сервис решений не подключён.</div></section></div>
+<div class="output-footer">Частичное наблюдение. Номер раздачи, дилер и история действий для PokerStars пока неизвестны. Сервис решений не подключён.</div></section></div>
 <div class="settings"><section class="panel"><div class="panel-title"><h2>Области чтения</h2><label><input id="show" type="checkbox" checked> Показать</label></div>
-<p class="hint">Выберите поле и обведите его на приостановленном видео. Банк — вся панель с POT, число банка — только цифры. Общие карты должны целиком помещаться в области.</p>
+<p class="hint">Выберите поле и обведите его на приостановленном видео. Для PokerStars сохраняйте расположение слотов внутри рамок карт: профиль рассчитан на этот интерфейс, а не на произвольный стол.</p>
 <div class="toolbar"><select id="region" aria-label="Область чтения"></select><button id="preset">Профиль этой записи</button></div>
 <div class="toolbar"><button id="save-profile">Сохранить профиль</button><button id="export-profile">Экспорт</button><label class="button">Импорт<input id="import-profile" type="file" accept="application/json" hidden></label></div>
 <div class="toolbar"><label class="button">Загрузить шаблоны карт<input id="import-cards" type="file" accept="application/json" hidden></label></div><p id="card-model" class="hint">Шаблоны не загружены. Читаем текстовые поля; карты пока неизвестны.</p></section>
@@ -47,7 +52,8 @@ const video = el<HTMLVideoElement>('video'),
 const camera = new Camera();
 let controller: LocalController | null = null;
 let cardTemplates: CardTemplate[] = [];
-let profile: LocalProfile = openPokerProfile();
+let symbols: SymbolSet | null = null;
+let profile: LocalProfile = pokerStarsProfile();
 let kind: 'camera' | 'recording' = 'recording',
   url = '',
   loaded = false,
@@ -59,13 +65,39 @@ let latest: LocalObservation | null = null,
 let reading = false;
 let runError: string | null = null;
 let drag: { x: number; y: number } | null = null;
-const labels: Record<RegionName, string> = {
+const openLabels: Record<string, string> = {
   header: 'Номер и этап раздачи',
   mode: 'Метка LIVE / REPLAY',
   pot: 'Банк — панель POT',
   amount: 'Число банка',
   board: 'Общие карты',
 };
+const labels = () => (isPokerStars(profile) ? pokerStarsLabels : openLabels);
+const actionLabels: Record<VisibleAction, string> = {
+  fold: 'Пас',
+  check: 'Чек',
+  call: 'Колл',
+  bet: 'Ставка',
+  raise: 'Рейз',
+  all_in: 'Олл-ин',
+  post_sb: 'Малый блайнд',
+  post_bb: 'Большой блайнд',
+};
+function profileControls() {
+  const stars = isPokerStars(profile);
+  el<HTMLSelectElement>('layout').value = stars ? 'pokerstars-classic' : 'open-poker';
+  el<HTMLSelectElement>('region').replaceChildren(
+    ...regionNames(profile).map((name) => new Option(labels()[name], name)),
+  );
+  el('players').hidden = !stars;
+  el('card-model').textContent = stars
+    ? symbols
+      ? 'Шаблоны PokerStars загружены. Проверены на этой записи; другие интерфейсы требуют отдельной проверки.'
+      : 'Загрузите pokerstars-symbols.json из проверочного набора. До этого карты остаются неизвестными.'
+    : cardTemplates.length
+      ? `Загружено ${cardTemplates.length} шаблонов Open Poker.`
+      : 'Шаблоны Open Poker не загружены. Карты пока неизвестны.';
+}
 const status = (text: string) => {
   el('status').textContent = text;
 };
@@ -91,6 +123,7 @@ function buttons() {
     'import-profile',
     'import-cards',
     'calibrated',
+    'layout',
   ])
     (el(id) as HTMLInputElement).disabled = busy || !!controller;
   el<HTMLButtonElement>('play').disabled = !loaded || busy;
@@ -136,6 +169,9 @@ function invalidate(reason?: 'changed' | 'stopped') {
   el('json').textContent = '{}';
   showWaiting();
   renderCards([]);
+  renderCardRow([], 'hero-cards', 2);
+  el('seats').replaceChildren();
+  el('hero-turn').textContent = 'Очередь хода не подтверждена.';
 }
 function showError(message: string) {
   runError = message;
@@ -144,8 +180,11 @@ function showError(message: string) {
   invalidate();
 }
 function renderCards(cards: LocalObservation['board']) {
-  el('cards').replaceChildren(
-    ...Array.from({ length: 5 }, (_, i) => {
+  renderCardRow(cards, 'cards', 5);
+}
+function renderCardRow(cards: LocalObservation['board'], id: string, count: number) {
+  el(id).replaceChildren(
+    ...Array.from({ length: count }, (_, i) => {
       const node = document.createElement('span'),
         card = cards[i];
       node.className = 'card';
@@ -173,7 +212,7 @@ function display(o: LocalObservation) {
     unknown: '—',
   }[o.ui_street];
   el('pot').textContent = o.pot_display.value?.toLocaleString('ru') ?? '—';
-  el('view-mode').textContent = o.ui_mode.toUpperCase();
+  el('view-mode').textContent = o.ui_mode === 'unknown' ? '—' : o.ui_mode.toUpperCase();
   const stale = o.status === 'stale';
   el('state-badge').textContent = stale
     ? 'Прошлый кадр'
@@ -191,6 +230,30 @@ function display(o: LocalObservation) {
     : `${captured} · ${o.evidence === 'repeated' ? 'чтение полей повторилось' : o.evidence === 'moving' ? 'кадр ещё движется' : 'первое чтение полей'} · полное состояние не подтверждено`;
   el('json').textContent = JSON.stringify(o, null, 2);
   renderCards(o.board);
+  if (o.schema_version === 'local-vision.observation.v2') {
+    renderCardRow(o.hero_cards, 'hero-cards', 2);
+    el('hero-turn').textContent = o.hero_turn
+      ? `${stale ? 'В прошлом кадре' : 'В кадре'} доступен ход: ${o.available_actions.map((a) => actionLabels[a]).join(', ')}.`
+      : 'Очередь хода не подтверждена. Предварительный выбор действия не считается ходом.';
+    el('seats').replaceChildren(
+      ...o.seats.map((seat) => {
+        const row = document.createElement('tr');
+        const values = [
+          `${seat.seat_index + 1} · ${seat.is_hero ? 'Вы' : (seat.name ?? 'Игрок')}`,
+          seat.stack?.toLocaleString('ru') ?? (seat.status === 'all_in' ? 'Олл-ин' : '—'),
+          seat.chip_display?.toLocaleString('ru') ??
+            (seat.chip_visibility === 'empty' ? 'Не видна' : '—'),
+          seat.action_label ? actionLabels[seat.action_label] : '—',
+        ];
+        for (const value of values) {
+          const cell = document.createElement('td');
+          cell.textContent = value;
+          row.append(cell);
+        }
+        return row;
+      }),
+    );
+  }
 }
 async function stop() {
   reading = false;
@@ -222,7 +285,8 @@ function drawOverlay() {
     );
     ctx.fillStyle = ctx.strokeStyle;
     ctx.font = `${Math.max(16, overlay.width / 55)}px sans-serif`;
-    ctx.fillText(labels[name as RegionName], r.x * overlay.width + 4, r.y * overlay.height - 6);
+    if (name === el<HTMLSelectElement>('region').value)
+      ctx.fillText(labels()[name], r.x * overlay.width + 4, r.y * overlay.height - 6);
   }
 }
 function sourceReady() {
@@ -235,7 +299,10 @@ function sourceReady() {
   el('preview').style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
   el('preview').style.width = `min(100%, ${(video.videoWidth / video.videoHeight) * 68}vh)`;
   if (profile.width !== video.videoWidth || profile.height !== video.videoHeight) {
-    profile = openPokerProfile(video.videoWidth, video.videoHeight);
+    profile = (isPokerStars(profile) ? pokerStarsProfile : openPokerProfile)(
+      video.videoWidth,
+      video.videoHeight,
+    );
   }
   profile.id = crypto.randomUUID();
   el<HTMLInputElement>('calibrated').checked = false;
@@ -404,6 +471,7 @@ el('start').onclick = async () => {
         },
       },
       cardTemplates,
+      symbols,
     );
     controller = instance;
     buttons();
@@ -434,18 +502,31 @@ el('stop').onclick = async () => {
 el('manual').onclick = () => controller?.force();
 el('export-state').onclick = () =>
   download('table-vision-local-observations.json', controller?.recording() ?? history);
-el<HTMLSelectElement>('region').replaceChildren(
-  ...REGION_NAMES.map((name) => new Option(labels[name], name)),
-);
+el<HTMLSelectElement>('layout').onchange = () => {
+  profile = (
+    el<HTMLSelectElement>('layout').value === 'pokerstars-classic'
+      ? pokerStarsProfile
+      : openPokerProfile
+  )(loaded ? video.videoWidth : undefined, loaded ? video.videoHeight : undefined);
+  el<HTMLInputElement>('calibrated').checked = false;
+  profileControls();
+  invalidate();
+  drawOverlay();
+  buttons();
+};
 el('region').onchange = drawOverlay;
 el('show').onchange = drawOverlay;
 el('calibrated').onchange = buttons;
 el('preset').onclick = () => {
-  profile = openPokerProfile(profile.width, profile.height);
+  profile = (isPokerStars(profile) ? pokerStarsProfile : openPokerProfile)(
+    profile.width,
+    profile.height,
+  );
   el<HTMLInputElement>('calibrated').checked = false;
+  profileControls();
   drawOverlay();
   buttons();
-  status('Профиль сброшен. Он рассчитан на запись 1206 × 2622; проверьте совмещение.');
+  status('Профиль сброшен. Проверьте совмещение рамок с выбранным интерфейсом.');
 };
 el('save-profile').onclick = () => {
   try {
@@ -470,6 +551,8 @@ el<HTMLInputElement>('import-profile').onchange = async (e) => {
     profile = imported;
     profile.id = crypto.randomUUID();
     el<HTMLInputElement>('calibrated').checked = false;
+    profileControls();
+    invalidate();
     drawOverlay();
     buttons();
     status('Профиль импортирован. Проверьте совмещение областей.');
@@ -485,12 +568,14 @@ el<HTMLInputElement>('import-cards').onchange = async (e) => {
     return;
   }
   try {
-    const templates = readTemplateSet(JSON.parse(await file.text()));
+    const stars = isPokerStars(profile);
+    const data = JSON.parse(await file.text());
     if (busy || controller) return;
-    cardTemplates = templates;
+    if (stars !== isPokerStars(profile)) return;
+    if (stars) symbols = readSymbolSet(data);
+    else cardTemplates = readTemplateSet(data);
     invalidate();
-    el('card-model').textContent =
-      `Загружено ${templates.length} шаблонов. Качество на других картах и ракурсах ещё не проверено.`;
+    profileControls();
     status('Шаблоны карт загружены на это устройство. Можно начать наблюдение.');
   } catch (error) {
     status(error instanceof Error ? error.message : 'Не удалось прочитать шаблоны');
@@ -514,7 +599,7 @@ overlay.onpointerup = (e) => {
     b = point(e);
   drag = null;
   if (Math.abs(a.x - b.x) < 0.005 || Math.abs(a.y - b.y) < 0.005) return;
-  profile.regions[el<HTMLSelectElement>('region').value as RegionName] = {
+  profile.regions[el<HTMLSelectElement>('region').value] = {
     x: Math.min(a.x, b.x),
     y: Math.min(a.y, b.y),
     w: Math.abs(a.x - b.x),
@@ -550,4 +635,6 @@ try {
   /* Explicit recalibration remains required. */
 }
 renderCards([]);
+renderCardRow([], 'hero-cards', 2);
+profileControls();
 buttons();
