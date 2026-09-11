@@ -1,5 +1,12 @@
 # Poker Vision Bridge
 
+## Browser webcam stage
+
+The isolated webcam console is documented in [docs/vision/README.md](docs/vision/README.md).
+It runs as `app.vision.api:app` on port 8001 and does not invoke the bridge's decision
+or execution pipeline. Start with explicit mock mode, then configure the server-side
+OpenAI key for live recognition. Run `npm run verify` for both new and legacy tests.
+
 A runnable, fail-closed MVP for this bot-only flow:
 
 ```text

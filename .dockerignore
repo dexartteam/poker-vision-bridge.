@@ -1,0 +1,9 @@
+.git
+.env
+.venv
+node_modules
+data
+recordings
+app/vision/static
+**/__pycache__
+.pytest_cache

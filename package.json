@@ -1,0 +1,26 @@
+{
+  "name": "poker-vision-console",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 4173",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:python": "uv run pytest -q",
+    "check:architecture": "node scripts/check-architecture.mjs",
+    "verify": "npm run typecheck && npm run lint && npm run check:architecture && npm test && npm run test:python && npm run build && npm run smoke:production",
+    "lint": "prettier --check web scripts/*.mjs scripts/*.ts vite.config.ts tsconfig.json package.json && uv run ruff check app/vision tests/vision scripts/smoke-production.py",
+    "format": "prettier --write web scripts/*.mjs scripts/*.ts vite.config.ts tsconfig.json package.json && uv run ruff format app/vision tests/vision scripts/smoke-production.py",
+    "benchmark": "vite-node scripts/benchmark.ts",
+    "verify:step": "node scripts/verify-step.mjs",
+    "smoke:production": "uv run python scripts/smoke-production.py"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.6",
+    "prettier": "3.6.2",
+    "typescript": "~5.9.3",
+    "vite": "^7.1.7",
+    "vitest": "^3.2.4"
+  }
+}
