@@ -1,0 +1,14 @@
+{
+  "kind": "synthetic_node_detector_benchmark",
+  "runtime": "v24.19.0",
+  "width": 640,
+  "height": 360,
+  "regions": 10,
+  "samples": 120,
+  "p50_ms": 10.928951999999981,
+  "p95_ms": 13.047403000000031,
+  "max_ms": 18.2177200000001,
+  "includes_camera_decode": false,
+  "includes_worker_transfer": false,
+  "real_camera_accuracy_measured": false
+}

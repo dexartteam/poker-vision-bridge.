@@ -1,5 +1,14 @@
 # Poker Vision Bridge
 
+## Browser webcam stage
+
+The isolated webcam console is documented in [docs/vision/README.md](docs/vision/README.md).
+The default page performs OCR and limited card recognition locally in the browser,
+without an API key or image uploads. Start it with `npm ci` and `npm run dev`.
+The optional cloud console is at `/server.html`, served by `app.vision.api:app`.
+Neither console invokes the bridge's decision or execution pipeline.
+Run `npm run verify` for both new and legacy tests.
+
 A runnable, fail-closed MVP for this bot-only flow:
 
 ```text

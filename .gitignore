@@ -6,4 +6,10 @@ __pycache__/
 data/*.db
 data/*.db-*
 dist/
-
+node_modules/
+app/vision/static/
+recordings/
+.sites/
+.sites-runtime/
+web/public/ocr/
+tests/vision-fixtures/*.json
