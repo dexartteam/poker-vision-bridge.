@@ -1,13 +1,15 @@
 import type { Pixels } from '../core/detector';
+import { pokerStarsRegionNames } from './pokerstars/profile';
 export type Rect = { x: number; y: number; w: number; h: number };
 export const REGION_NAMES = ['header', 'mode', 'pot', 'amount', 'board'] as const;
 export type RegionName = (typeof REGION_NAMES)[number];
 export type LocalProfile = {
-  schema_version: 'local-vision.profile.v1';
+  schema_version: 'local-vision.profile.v1' | 'local-vision.profile.v2';
+  layout?: 'pokerstars-classic';
   id: string;
   width: number;
   height: number;
-  regions: Record<RegionName, Rect>;
+  regions: Record<string, Rect>;
 };
 export type Source = {
   kind: 'camera' | 'recording';
@@ -29,23 +31,62 @@ export type Fields = {
   pot_display: { value: number | null; raw: string | null; unit: 'chips' };
   board: CardRead[];
 };
-export type LocalObservation = Fields & {
-  schema_version: 'local-vision.observation.v1';
+type ObservationBase = Fields & {
   source: Source;
   status: 'partial' | 'stale';
   evidence: 'single_frame' | 'repeated' | 'moving';
   stable: boolean;
   decision_ready: false;
-  hero_cards: null;
-  hero_turn: null;
-  seats: null;
   pot_includes_current_bets: null;
   diagnostics: { ocr: Record<string, OCR>; cards: CardMatch[]; elapsed_ms: number };
 };
+export type VisibleAction =
+  | 'fold'
+  | 'check'
+  | 'call'
+  | 'bet'
+  | 'raise'
+  | 'all_in'
+  | 'post_sb'
+  | 'post_bb';
+export type SeatRead = {
+  seat_index: number;
+  is_hero: boolean;
+  name: string | null;
+  stack: number | null;
+  bet: null;
+  chip_display: number | null;
+  chip_visibility: 'visible' | 'empty' | 'unknown';
+  action_label: VisibleAction | null;
+  status: 'folded' | 'all_in' | 'unknown';
+};
+export type OpenPokerObservation = ObservationBase & {
+  schema_version: 'local-vision.observation.v1';
+  hero_cards: null;
+  hero_turn: null;
+  seats: null;
+};
+export type PokerStarsObservation = ObservationBase & {
+  schema_version: 'local-vision.observation.v2';
+  layout: 'pokerstars-classic';
+  hero_cards: CardRead[];
+  hero_turn: boolean | null;
+  seats: SeatRead[];
+  dealer_seat: number | null;
+  available_actions: VisibleAction[];
+  action_history: { status: 'incomplete'; events: [] };
+};
+export type LocalObservation = OpenPokerObservation | PokerStarsObservation;
+export const isPokerStars = (p: LocalProfile) =>
+  p.schema_version === 'local-vision.profile.v2' && p.layout === 'pokerstars-classic';
+export const regionNames = (p: LocalProfile): readonly string[] =>
+  isPokerStars(p) ? pokerStarsRegionNames : REGION_NAMES;
 export function validateLocalProfile(value: LocalProfile): LocalProfile {
   if (
     !value ||
-    value.schema_version !== 'local-vision.profile.v1' ||
+    !['local-vision.profile.v1', 'local-vision.profile.v2'].includes(value.schema_version) ||
+    (value.schema_version === 'local-vision.profile.v2' && value.layout !== 'pokerstars-classic') ||
+    (value.schema_version === 'local-vision.profile.v1' && value.layout !== undefined) ||
     typeof value.id !== 'string' ||
     value.id.length < 8 ||
     !Number.isInteger(value.width) ||
@@ -58,10 +99,10 @@ export function validateLocalProfile(value: LocalProfile): LocalProfile {
     throw new Error('Некорректный профиль локального распознавания');
   if (
     !value.regions ||
-    Object.keys(value.regions).some((name) => !REGION_NAMES.includes(name as RegionName))
+    Object.keys(value.regions).some((name) => !regionNames(value).includes(name))
   )
     throw new Error('Неизвестные области профиля');
-  for (const name of REGION_NAMES) {
+  for (const name of regionNames(value)) {
     const r = value.regions?.[name];
     if (
       !r ||
