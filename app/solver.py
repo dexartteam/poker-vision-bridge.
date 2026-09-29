@@ -58,22 +58,11 @@ def _number(value: Decimal) -> int | float:
     return int(integral) if value == integral else float(value)
 
 
-class PokerAISolver:
-    def __init__(self, settings: Settings, client: httpx.AsyncClient | None = None):
+class PokerAIRequestPlanner:
+    """Pure request preparation shared by the bridge and recorded-video diagnostics."""
+
+    def __init__(self, settings: Settings):
         self.settings = settings
-        self._owns_client = client is None
-        self.client = client or httpx.AsyncClient(
-            base_url=settings.pokerai_base_url.rstrip("/"),
-            timeout=settings.pokerai_timeout_seconds,
-            trust_env=False,
-            headers={
-                "Authorization": f"Bearer {settings.pokerai_api_key.get_secret_value()}",
-                "Content-Type": "application/json",
-                "User-Agent": "poker-vision-bridge/0.1.0",
-            },
-        )
-        self._flop_tree_cache: OrderedDict[str, dict[str, Any]] = OrderedDict()
-        self._flop_tree_lock = asyncio.Lock()
 
     def prepare(self, observation: Observation) -> PreparedRequest:
         if observation.street == Street.PREFLOP:
@@ -217,6 +206,23 @@ class PokerAISolver:
                 min(active_stacks) / observation.blinds.big
             ),
         }
+
+class PokerAISolver(PokerAIRequestPlanner):
+    def __init__(self, settings: Settings, client: httpx.AsyncClient | None = None):
+        super().__init__(settings)
+        self._owns_client = client is None
+        self.client = client or httpx.AsyncClient(
+            base_url=settings.pokerai_base_url.rstrip("/"),
+            timeout=settings.pokerai_timeout_seconds,
+            trust_env=False,
+            headers={
+                "Authorization": f"Bearer {settings.pokerai_api_key.get_secret_value()}",
+                "Content-Type": "application/json",
+                "User-Agent": "poker-vision-bridge/0.1.0",
+            },
+        )
+        self._flop_tree_cache: OrderedDict[str, dict[str, Any]] = OrderedDict()
+        self._flop_tree_lock = asyncio.Lock()
 
     async def solve(self, request: PreparedRequest) -> SolverResult:
         if request.kind == "preflop":

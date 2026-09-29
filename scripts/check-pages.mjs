@@ -4,6 +4,15 @@ import { resolve, relative } from 'node:path';
 
 const root = resolve('dist/pages');
 const html = readFileSync(resolve(root, 'index.html'), 'utf8');
+const replayHtml = readFileSync(resolve(root, 'replay.html'), 'utf8');
+for (const match of replayHtml.matchAll(/(?:src|href)="([^"#]+)"/g)) {
+  const reference = match[1];
+  assert(
+    !reference.startsWith('/') && !reference.includes(':'),
+    `Non-relative replay asset: ${reference}`,
+  );
+  assert(existsSync(resolve(root, reference)), `Missing replay asset: ${reference}`);
+}
 const references = [...html.matchAll(/(?:src|href)="([^"#]+)"/g)].map((m) => m[1]);
 assert(references.length >= 2, 'Missing built entry assets');
 for (const reference of references) {
@@ -50,7 +59,7 @@ const files = walk(root);
 for (const file of files) {
   const name = relative(root, file);
   assert(
-    name === 'index.html' || /^(assets|ocr)\//.test(name),
+    ['index.html', 'replay.html'].includes(name) || /^(assets|ocr)\//.test(name),
     `Unexpected published file: ${name}`,
   );
   assert(

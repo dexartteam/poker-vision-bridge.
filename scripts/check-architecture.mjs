@@ -9,6 +9,11 @@ const files = (dir) =>
         : [],
   );
 const violations = [];
+for (const file of files('app/replay').filter((f) => f.endsWith('.py'))) {
+  const text = readFileSync(file, 'utf8');
+  if (/(?:from|import)\s+app\.(?:coordinator|openpoker|telegram|main)/.test(text))
+    violations.push(file + ': replay must not depend on execution');
+}
 for (const file of files('app/vision').filter((f) => f.endsWith('.py'))) {
   const text = readFileSync(file, 'utf8');
   if (/(?:from|import)\s+app\.(?:coordinator|solver|openpoker|telegram|main|models)/.test(text))
