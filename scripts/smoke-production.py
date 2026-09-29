@@ -5,6 +5,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from app.replay.api import create_app as create_replay_app
+from app.replay.settings import ReplaySettings
 from app.vision.api import VisionSettings, create_app
 
 assert (Path(__file__).parents[1] / "app/vision/static/index.html").exists(), (
@@ -31,4 +33,12 @@ with TestClient(app) as client:
     assert response.status_code == 200 and int(response.headers["content-length"]) > 0
     assert client.get("/v1/vision/status").json()["mode"] == "mock"
     assert client.post("/v1/events", json={}).status_code in (404, 405)
-print("Production ASGI and built assets passed")
+with TestClient(create_replay_app(ReplaySettings(_env_file=None))) as client:
+    page = client.get("/replay.html")
+    assert page.status_code == 200
+    for asset in re.findall(r'(?:src|href)="(/assets/[^"]+)"', page.text):
+        assert client.get(asset).status_code == 200
+    assert client.get("/v1/replay/status").json()["execution"] == "disabled"
+    assert client.post("/v1/replay/analyze", json={}).status_code == 401
+    assert client.post("/v1/events", json={}).status_code in (404, 405)
+print("Production ASGI and built assets passed (vision and recorded-video replay)")

@@ -9,6 +9,22 @@ The optional cloud console is at `/server.html`, served by `app.vision.api:app`.
 Neither console invokes the bridge's decision or execution pipeline.
 Run `npm run verify` for both new and legacy tests.
 
+## Recorded-video solver debugger
+
+Open `/replay.html` for the separate PokerStars recording workflow. It holds each
+sampled frame while OCR runs, pauses at a Hero decision, and displays the same
+frame beside recognized data and the PokerAI result or a list of missing fields.
+Continue is manual. Recognition remains local; only the JSON state goes to the
+replay backend. See [setup, contract, and limitations](docs/replay/README.md).
+
+This consumer never sends game commands. The recording recognizer currently lacks
+hand identity, dealer/positions, blind amounts, confirmed bets, and complete action
+history, so unannotated observations intentionally block real solver requests.
+Manually confirmed context can fill these gaps for an individual paused frame.
+`POKERAI_API_KEY` is server-only; no key means no real strategy response, with no
+fake fallback. The existing solver adapter supports restricted preflop and flop
+contexts and reports turn/river as unsupported.
+
 A runnable, fail-closed MVP for this bot-only flow:
 
 ```text
